@@ -1,0 +1,74 @@
+%% get params
+scanFolder = 'yourdata'
+
+%     recoFolder = [scanFolder, filesep, 'pdata', filesep, sprintf('%d', recoNum) filesep];
+    recoFolder = 'yourdata';
+
+    scanParams.visuPars = readBrukerParamFile([recoFolder 'visu_pars']);
+    scanParams.reco = readBrukerParamFile([recoFolder 'reco']);
+
+    scanParams.method = readBrukerParamFile([scanFolder, filesep, 'method']);
+    scanParams.acqp = readBrukerParamFile([scanFolder, filesep, 'acqp']);
+
+%function [fitresult, gof] = inversionRecoveryFit(t, data)
+%inversionRecoveryFit(T,MEANDAT)
+%  Data for 'inversionRecoveryFit' fit:
+%      X Input : t
+%      Z Output: data
+%  Output:
+%      fitresult : a fit object representing the fit.
+%      gof : structure with goodness-of fit info.
+%
+%  See also FIT, CFIT, SFIT.
+image = readBruker2dseq_peri(recoFolder, scanParams);
+[m,n,o]=size(image);
+imagedata= reshape(image, [m,n,10,o/10]);
+[u,s,vt]=svd(reshape(image,[],20),0);  %,0 makes the output smaller
+figure;
+highcontrast=reshape(u(:,2),m,n,[]);
+imagesc(highcontrast(:,:,7))
+t = scanParams.method.PVM_FairTIR_Arr';
+ft = fittype( 'b.*abs(1-c.*exp(-x./(1000.*a)))', 'independent', 'x', 'dependent', 'z');
+opts = fitoptions( 'Method', 'NonlinearLeastSquares' );
+opts.Display = 'Off';
+opts.Robust = 'Bisquare';
+opts.StartPoint = [3 1.04 1.7];
+opts.Lower = [0.2 0.7 1];
+opts.Upper = [4 1.3 2.1];
+
+for ix=130:-1:1
+    disp(['fitting line ' int2str(ix)])
+    for iy=80:-1:16
+        data=squeeze(imagedata(ix,iy,7,:));
+%-----define your data and t vectors here ---------------
+%data=shiftdim(reshape(img.T1_101_f,[150 100 6 10]),2);
+%data=mean(data(:,mean(data)>3&min(data)>1.5),2);
+        data=data./max(data(:));
+%for VTR data use: t=scanParams.acqp.ACQ_recov_time';
+%-----both should be column vectors of the same size-----
+
+%% Fit: 'inversionRecoveryFit'.
+% Set up fittype and options.
+
+% Fit model to data.
+        [fitresult, gof] = fit(t, data, ft, opts );
+        rescoeff(ix,:,iy)=coeffvalues(fitresult);
+    end
+end
+figure; imagesc(squeeze(rescoeff(:,1,:))); colorbar
+%% example of how to map the T1
+%figure; imagesc(squeeze(rescoeff(:,1,16:end)),[2 3]); axis off;  colorbar
+%rescoeff = shiftdim(rescoeff,2);
+% Plot fit with data.
+figure( 'Name', 'inversionRecoveryFit' );
+plot(t, data,'.');
+hold on; plot(fitresult); hold off;
+legend('data vs. t', 'inversionRecoveryFit', 'Location', 'SouthEast', 'Interpreter', 'none' );
+% Label axes
+xlabel( 't (ms)', 'Interpreter', 'none' );
+ylabel( 'Intensity', 'Interpreter', 'none' );
+grid on
+fitresult
+disp('a is T1 in seconds.')
+disp('b is the intensity for infinite recovery.')
+disp('c is 1 for VTR and should be 2 for inversion recovery. For incomplete inversion it will be inbetween.')
